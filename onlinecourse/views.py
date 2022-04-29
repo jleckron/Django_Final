@@ -111,10 +111,13 @@ def enroll(request, course_id):
          # Redirect to show_exam_result with the submission id
 def submit(request, course_id):
     course = get_object_or_404(Course, pk=course_id)
-    enr = Enrollment.objects.get(user=request.user, course=course)
+    enr = Enrollment.objects.filter(user=request.user, course=course).get()
     sub = Submission.objects.create(enrollment=enr)
 
-    sub.choices.set(extract_answers(request))
+    for ans in extract_answers(request):
+        sub.choices.add(Choice.objects.filter(id=int(ans)).get())
+
+    sub.save()
 
     return HttpResponseRedirect(reverse(viewname='onlinecourse:show_exam_result', args=(course.id, sub.id,)))
 
@@ -140,8 +143,32 @@ def show_exam_result(request, course_id, submission_id):
     course = get_object_or_404(Course, pk=course_id)
     submission = get_object_or_404(Submission, pk=submission_id)
 
-    sels = submission.choices.get()
-    ###FAILING####
+    examTotal = 0
+    examUserScore = 0
+    choiceSubmits = {}
+    choiceResults = {}
+    for ques in course.question_set.all():
+        qTotal = 0
+        qTotalUser = 0
+        for chc in ques.choice_set.all():
+            qTotal += 1
+            tempRight = chc.correct
+            count = submission.choices.filter(id=chc.id).count()
+            tempUser = count > 0
+            choiceSubmits[chc.id] = tempUser
+            choiceResults[chc.id] = chc.correct == tempUser
+            if chc.correct == tempUser:
+                qTotalUser += 1
+        examTotal += ques.grade
+        examUserScore += ques.grade * (qTotalUser / qTotal)
+
+    context['course'] = course
+    context['total'] = examTotal
+    context['result'] = int(examUserScore)
+    context['grade'] = int((examUserScore/examTotal)*100)
+    context['cSubmits'] = choiceSubmits
+
+    return render(request, 'onlinecourse/exam_result_bootstrap.html', context)
 
 
 
